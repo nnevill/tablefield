@@ -41,4 +41,3 @@ function tablefield_disable() {
   drupal_load('module', 'content');
   content_notify('disable', 'tablefield');
 }
-?>
