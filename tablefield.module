@@ -386,7 +386,7 @@ function tablefield_process($element, $edit, $form_state, $form) {
       $element['tablefield']['cell_' . $i . '_' . $ii] = array(
         '#type' => 'textfield',
         '#size' => 10,
-        '#attributes' => array('id' => 'tablefield-' . str_replace('_', '-', $element['#field_name']) .'-'. $delta . '-cell-' . $i . '-' . $ii),
+        '#attributes' => array('id' => 'tablefield-' . str_replace('_', '-', $element['#field_name']) .'-'. $delta . '-cell-' . $i . '-' . $ii, 'class' => 'tablefield-row-'. $i .' tablefield-col-'. $ii),
         '#default_value' => (empty($field_value)) ? $default_value[$i][$ii] : $field_value,
         '#prefix' => '<td>',
         '#suffix' => '</td>',
