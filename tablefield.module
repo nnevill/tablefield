@@ -325,7 +325,7 @@ function tablefield_field_widget_form(&$form, &$form_state, $field, $instance, $
       '#markup' => '<tr class="tablefield-row-' . $i . ' ' . $zebra . '">',
     );
     for ($ii = 0; $ii < $count_cols; $ii++) {
-      $instance_default = $instance['default_value'][$delta]['tablefield']["cell_{$i}_{$ii}"];
+      $instance_default = isset($instance['default_value'][$delta]['tablefield']["cell_{$i}_{$ii}"]) ? $instance['default_value'][$delta]['tablefield']["cell_{$i}_{$ii}"] : array();
       if (!empty($instance_default) && !empty($field['settings']['lock_values']) && $arg0 != 'admin') {
         // The value still needs to be send on every load in order for the
         // table to be saved correctly.
