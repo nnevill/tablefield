@@ -1,0 +1,5 @@
+name: 'TableField'
+description: 'Defines a generic tablular data field.'
+core: 8.x
+type: module
+#todo configure: tablefield.admin
