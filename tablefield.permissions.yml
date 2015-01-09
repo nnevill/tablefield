@@ -1,0 +1,8 @@
+export tablefield:
+  title: 'Export Tablefield Data as CSV'
+
+rebuild tablefield:
+  title: 'Rebuild any tablefield'
+
+configure tablefield:
+  title: 'Allow changes in the global tablefield module configuration'

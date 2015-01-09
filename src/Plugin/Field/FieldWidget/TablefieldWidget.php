@@ -6,10 +6,12 @@
  */
 
 namespace Drupal\tablefield\Plugin\Field\FieldWidget;
+
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\WidgetBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Component\Utility\Xss;
+use Symfony\Component\Validator\ConstraintViolationInterface;
+
 
 /**
  * Plugin implementation of the 'tablefield' widget.
@@ -28,102 +30,70 @@ class TablefieldWidget extends WidgetBase {
    * {@inheritdoc}
    */
   public function formElement(FieldItemListInterface $items, $delta, array $element, array &$form, FormStateInterface $form_state) {
-    //$default_value = $items[$delta]->getFieldDefinition()->default_value
+    $is_field_settings_default_widget_form = $form_state->getBuildInfo()['form_id'] == 'field_ui_field_edit_form' ? 1 : 0;
+
+    $field = $items[0]->getFieldDefinition();
+    $field_name = $field->getName();
+    $field_settings = $field->getSettings();
+
+    $triggering_element = $form_state->getTriggeringElement();
   
     $element['#type'] = 'tablefield';
-    $element['#attached']['css'][drupal_get_path('module', 'tablefield') . '/tablefield.css'] = array();
+    $element['#attached']['library'][] = 'tablefield/form_css';
     $form['#attributes']['enctype'] = 'multipart/form-data';
   
     // Establish a list of saved/submitted/default values
-    if (isset($form_state['clicked_button']['#value']) && $form_state['clicked_button']['#name'] == 'tablefield_rebuild_' . $field['field_name'] . '_' . $delta) {
-      // Rebuilding table rows/cols
-      $default_value = tablefield_rationalize_table($form_state['tablefield_rebuild'][$field['field_name']][$langcode][$delta]['tablefield']);
+    // Start with Rebuilding table rows/cols
+    if (isset($triggering_element['#name']) && $triggering_element['#name'] == 'tablefield_rebuild_' . $field_name . '_' . $delta) {
+      if ($is_field_settings_default_widget_form) {
+        // This means we are currently in the field settings form
+        $default_value = $form_state->getValue(['default_value_input', $field_name, $delta]);
+      }
+      else {
+        // node edit form
+        $default_value = $form_state->getValue([$field_name, $delta]);
+      }
+      drupal_set_message($this->t('Table structure rebuilt.'), 'status', FALSE);
     }
-    elseif (isset($form_state['clicked_button']['#value']) && $form_state['clicked_button']['#name'] == 'tablefield-import-button-' . $field['field_name'] . '-' . $delta) {
-      // Importing CSV data
-      tablefield_import_csv($form, $form_state);
-      $default_value = tablefield_rationalize_table($form_state['input'][$field['field_name']][$langcode][$delta]['tablefield']);
+    elseif (isset($triggering_element['#name']) && $triggering_element['#name'] == 'tablefield_import_' . $field_name . '-' . $delta) {
+      // Import CSV
+      $tablefield = $this->importCsv($field_name .'_'. $delta);
+
+      $default_value['tablefield'] = $tablefield;
+
+      $form_state->setValue([$field_name, $delta, 'tablefield'], $tablefield);
+
+      // Unfortunately no nice cherry-pick setUserInput available, have to do it long way
+      $input = $form_state->getUserInput();
+      $input[$field_name][$delta]['tablefield'] = $tablefield;
+      $form_state->setUserInput($input);
     }
-    elseif ($form_state['submitted'] && isset($items[$delta]) && isset($items[$delta]->tablefield)) {
+    // @TODO: does this ever evaluate to TRUE?
+    elseif ($form_state->isSubmitted() && isset($items[$delta]) && isset($items[$delta]->tablefield)) {
       // A form was submitted
-      $default_value = tablefield_rationalize_table($items[$delta]->tablefield);
+      $default_value = $items[$delta];
     }
-    elseif (isset($items[$delta]->value['tablefield'])) {
-      // Default from database (saved node)
-// @TODO this loads the default for new nodes in D8 now, the else may be unnecessary.
-      //$default_value = tablefield_rationalize_table(unserialize($items[$delta]->value));
-      $default_value = tablefield_rationalize_table($items[$delta]->value['tablefield']);
+    elseif (isset($items[$delta]->value)) {
+      $default_value['tablefield'] = unserialize($items[$delta]->value);
     }
-    else {
-      // After the first table, we don't want to populate the values in the table
-// @TODO deal with multiple default values.
-      //if ($delta > 0) {
-        //tablefield_delete_table_values($default_value[0]['tablefield']);
-      //}
-  
-      // Get the widget default value
-      //if(!empty($form_state['input'][$field['field_name']][$langcode][$delta]['tablefield'])) {
-        //$default_value = tablefield_rationalize_table($form_state['input'][$field['field_name']][$langcode][$delta]['tablefield']);
-      //} else {
-        $default_value = tablefield_rationalize_table(unserialize($items[$delta]->value));
-      //}
-  
-      $default_count_cols = isset($items[0]->tablefield['rebuild']['count_cols']) ? $items[0]->tablefield['rebuild']['count_cols'] : 5;
-      $default_count_rows = isset($items[0]->tablefield['rebuild']['count_cols']) ? $items[0]->tablefield['rebuild']['count_cols'] : 5;
+    elseif (!$is_field_settings_default_widget_form && !empty($field->default_value[$delta])) {
+      $default_value = $field->default_value[$delta];
+      $default_value['tablefield'] = unserialize($default_value['value']);
     }
-  
-    if (!empty($instance['description'])) {
-      $help_text = $instance['description'];
-    }
-    else {
-      $help_text = t('The first row will appear as the table header. Leave the first row blank if you do not need a header.');
-    }
-  
+
     $element['tablefield'] = array(
       '#title' => $element['#title'],
-      '#description' => Xss::filterAdmin($help_text),
-      '#attributes' => array('id' => 'form-tablefield-' . $field['field_name'] . '-' . $delta, 'class' => array('form-tablefield')),
+      '#description' => $this->t('The first row will appear as the table header. Leave the first row blank if you do not need a header.'),
+      '#attributes' => array('id' => 'form-tablefield-' . $field_name . '-' . $delta, 'class' => array('form-tablefield')),
       '#type' => 'fieldset',
       '#tree' => TRUE,
-      '#collapsible' => FALSE,
-      '#prefix' => '<div id="tablefield-' . $field['field_name'] . '-' . $delta . '-wrapper">',
+      '#prefix' => '<div id="tablefield-' . $field_name . '-' . $delta . '-wrapper">',
       '#suffix' => '</div>',
     );
-  
+
     // Give the fieldset the appropriate class if it is required
     if ($element['#required']) {
-      $element['tablefield']['#title'] .= ' <span class="form-required" title="' . t('This field is required') . '">*</span>';
-    }
-  
-    $path_args = explode('/', current_path());
-    // Check if the current page is admin.
-    if (\Drupal::service('router.admin_context')->isAdminRoute(\Drupal::routeMatch()->getRouteObject())) {
-      $element['tablefield']['#description'] = t('This form defines the table field defaults, but the number of rows/columns and content can be overridden on a per-node basis. The first row will appear as the table header. Leave the first row bland if you do not need a header.');
-    }
-  
-    // Determine how many rows/columns are saved in the data
-    if (!empty($default_value)) {
-      $count_rows = count($default_value);
-      $count_cols = 0;
-      foreach ($default_value as $row) {
-        $temp_count = count($row);
-        if ($temp_count > $count_cols) {
-          $count_cols = $temp_count;
-        }
-      }
-    }
-    else {
-      $count_rows = count($default_value);
-      $count_cols = isset($default_count_cols) ? $default_count_cols : 0;
-      $count_rows = isset($default_count_rows) ? $default_count_rows : 0;
-    }
-  
-    // Override the number of rows/columns if the user rebuilds the form.
-    if (isset($form_state['clicked_button']['#value']) && $form_state['clicked_button']['#name'] == 'tablefield_rebuild_' . $field['field_name'] . '_' . $delta) {
-      $count_cols = $form_state['tablefield_rebuild'][$field['field_name']][$langcode][$delta]['tablefield']['rebuild']['count_cols'];
-      $count_rows = $form_state['tablefield_rebuild'][$field['field_name']][$langcode][$delta]['tablefield']['rebuild']['count_rows'];
-  
-      drupal_set_message(t('Table structure rebuilt.'), 'status', FALSE);
+      $element['tablefield']['#required'] = TRUE;
     }
   
     // Render the form table
@@ -131,30 +101,32 @@ class TablefieldWidget extends WidgetBase {
       '#markup' => '<table>',
     );
 
+    $count_cols = isset($default_value['tablefield']['rebuild']['count_cols']) ? $default_value['tablefield']['rebuild']['count_cols'] : 5;
+    $count_rows = isset($default_value['tablefield']['rebuild']['count_rows']) ? $default_value['tablefield']['rebuild']['count_rows'] : 5;
+
     for ($i = 0; $i < $count_rows; $i++) {
       $zebra = $i % 2 == 0 ? 'even' : 'odd';
       $element['tablefield']['b_break' . $i] = array(
         '#markup' => '<tr class="tablefield-row-' . $i . ' ' . $zebra . '">',
       );
       for ($ii = 0; $ii < $count_cols; $ii++) {
-        $instance_default = isset($default_value[$delta]['tablefield']["cell_{$i}_{$ii}"]) ? $default_value[$delta]['tablefield']["cell_{$i}_{$ii}"] : array();
-        if (!empty($instance_default) && !empty($field['settings']['lock_values']) && $arg0 != 'admin') {
+        $cell_default = isset($default_value['tablefield']["cell_${i}_${ii}"]) ? $default_value['tablefield']["cell_${i}_${ii}"] : '';
+        if (!empty($cell_default) && !empty($field_settings['lock_values']) && !$is_field_settings_default_widget_form) {
           // The value still needs to be send on every load in order for the
           // table to be saved correctly.
           $element['tablefield']['cell_' . $i . '_' . $ii] = array(
             '#type' => 'value',
-            '#value' => $instance_default,
+            '#value' => $cell_default,
           );
           // Display the default value, since it's not editable.
           $element['tablefield']['cell_' . $i . '_' . $ii . '_display'] = array(
             '#type' => 'item',
-            '#title' => $instance_default,
+            '#title' => $cell_default,
             '#prefix' => '<td style="width:' . floor(100/$count_cols) . '%">',
             '#suffix' => '</td>',
           );
         }
         else {
-          $cell_default = isset($default_value[$i][$ii]) ? $default_value[$i][$ii] : '';
           $element['tablefield']['cell_' . $i . '_' . $ii] = array(
             '#type' => 'textfield',
             '#maxlength' => 2048,
@@ -174,13 +146,14 @@ class TablefieldWidget extends WidgetBase {
         '#markup' => '</tr>',
       );
     }
+
     $element['tablefield']['t_break' . $i] = array(
       '#markup' => '</table>',
     );
   
     // If the user doesn't have rebuild perms, we pass along the data as a value.
     // Otherwise, we will provide form elements to specify the size and ajax rebuild.
-    if (isset($field['settings']['restrict_rebuild']) && $field['settings']['restrict_rebuild'] && !user_access('rebuild tablefield')) {
+    if (!empty($field_settings['restrict_rebuild']) && !\Drupal::currentUser()->hasPermission('rebuild tablefield')) {
       $element['tablefield']['rebuild'] = array (
         '#type' => 'value',
         '#tree' => TRUE,
@@ -194,96 +167,178 @@ class TablefieldWidget extends WidgetBase {
         ),
         'rebuild' => array(
           '#type' => 'value',
-          '#value' => t('Rebuild Table'),
+          '#value' => $this->t('Rebuild Table'),
         ),
       );
     }
     else {
       $element['tablefield']['rebuild'] = array(
-        '#type' => 'fieldset',
+        '#type' => 'details',
         '#tree' => TRUE,
-        '#title' => t('Change number of rows/columns.'),
-        '#collapsible' => TRUE,
-        '#collapsed' => TRUE,
+        '#title' => $this->t('Change number of rows/columns.'),
+        '#open' => FALSE,
       );
       $element['tablefield']['rebuild']['count_cols'] = array(
-        '#title' => t('How many Columns'),
+        '#title' => $this->t('How many Columns'),
         '#type' => 'textfield',
         '#size' => 5,
         '#prefix' => '<div class="clearfix">',
         '#suffix' => '</div>',
-        '#value' => $count_cols,
+        '#default_value' => $count_cols,
       );
       $element['tablefield']['rebuild']['count_rows'] = array(
-        '#title' => t('How many Rows'),
+        '#title' => $this->t('How many Rows'),
         '#type' => 'textfield',
         '#size' => 5,
         '#prefix' => '<div class="clearfix">',
         '#suffix' => '</div>',
-        '#value' => $count_rows,
+        '#default_value' => $count_rows,
       );
       $element['tablefield']['rebuild']['rebuild'] = array(
         '#type' => 'button',
-        '#validate' => array(),
-        '#limit_validation_errors' => array(),
-        '#executes_submit_callback' => TRUE,
-        '#submit' => array('tablefield_rebuild_form'),
-        '#value' => t('Rebuild Table'),
-        '#name' => 'tablefield_rebuild_' . $field['field_name'] . '_' . $delta,
+        '#value' => $this->t('Rebuild Table'),
+        '#name' => 'tablefield_rebuild_' . $field_name . '_' . $delta,
         '#attributes' => array(
           'class' => array('tablefield-rebuild'),
         ),
         '#ajax' => array(
-          'callback' => 'tablefield_rebuild_form_ajax',
-          'wrapper' => 'tablefield-' . $field['field_name'] . '-' . $delta . '-wrapper',
+          'callback' => 'Drupal\tablefield\Plugin\Field\FieldWidget\TablefieldWidget::ajaxCallbackRebuild',
+          'progress' => array('type' => 'throbber', 'message' => NULL),
+          'wrapper' => 'tablefield-' . $field_name . '-' . $delta . '-wrapper',
           'effect' => 'fade',
         ),
       );
     }
-  
+
     // Allow the user to import a csv file
     $element['tablefield']['import'] = array(
-      '#type' => 'fieldset',
+      '#type' => 'details',
       '#tree' => TRUE,
-      '#title' => t('Import from CSV'),
-      '#collapsible' => TRUE,
-      '#collapsed' => TRUE,
+      '#title' => $this->t('Import from CSV'),
+      '#open' => FALSE,
     );
-    $element['tablefield']['import']['tablefield_csv_' . $field['field_name'] . '_' . $delta] = array(
-      '#name' => 'files[' . $field['field_name'] . '_' . $delta . ']',
+    $element['tablefield']['import']['tablefield_csv_' . $field_name . '_' . $delta] = array(
+      '#name' => 'files[' . $field_name . '_' . $delta . ']',
       '#title' => 'File upload',
       '#type' => 'file',
     );
   
-    $element['tablefield']['import']['rebuild_' . $field['field_name'] . '_' . $delta] = array(
+    $element['tablefield']['import']['rebuild_' . $field_name . '_' . $delta] = array(
       '#type' => 'button',
       '#validate' => array(),
-      '#limit_validation_errors' => array(),
-      '#executes_submit_callback' => TRUE,
-      '#submit' => array('tablefield_rebuild_form'),
-      '#value' => t('Upload CSV'),
-      '#name' => 'tablefield-import-button-' . $field['field_name'] . '-' . $delta,
+      '#value' => $this->t('Upload CSV'),
+      '#name' => 'tablefield_import_' . $field_name . '-' . $delta,
       '#attributes' => array(
         'class' => array('tablefield-rebuild'),
         //'id' => 'tablefield-import-button-' . $field['field_name'] . '-' . $delta,
       ),
       '#ajax' => array(
-        'callback' => 'tablefield_rebuild_form_ajax',
-        'wrapper' => 'tablefield-' . $field['field_name'] . '-' . $delta . '-wrapper',
+        'callback' => 'Drupal\tablefield\Plugin\Field\FieldWidget\TablefieldWidget::ajaxCallbackRebuild',
+        'progress' => array('type' => 'throbber', 'message' => NULL),
+        'wrapper' => 'tablefield-' . $field_name . '-' . $delta . '-wrapper',
         'effect' => 'fade',
-        'event' => 'click'
       ),
     );
-  
+
+
+    if ($is_field_settings_default_widget_form) {
+      $element['tablefield']['#description'] = t('This form defines the table field defaults, but the number of rows/columns and content can be overridden on a per-node basis. The first row will appear as the table header. Leave the first row bland if you do not need a header.');
+
+      // This we need in the TablefieldItem::isEmpty check
+      $element['is_field_settings'] = array(
+        '#type' => 'value',
+        '#value' => 1,
+      );
+    }
   
     // Allow the user to select input filters
-    if (!empty($field['settings']['cell_processing'])) {
+    if (!empty($field_settings['cell_processing'])) {
       $element['#base_type'] = $element['#type'];
       $element['#type'] = 'text_format';
       $element['#format'] = isset($items[$delta]->format) ? $items[$delta]->format : NULL;
     }
   
-    return array('value' => $element);
+    return $element;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function massageFormValues(array $values, array $form, FormStateInterface $form_state) {
+    foreach ($values as $delta => $value) {
+      $values[$delta]['value'] = serialize($value['tablefield']);
+    }
+    return $values;
+  }
+
+  /**
+   * AJAX callback to rebuild the number of rows/columns.
+   * The basic idea is to descend down the list of #parent elements of the
+   * clicked_button in order to locate the tablefield inside of the $form
+   * array. That is the element that we need to return.
+   * @param array $form
+   * @param FormStateInterface $form_state
+   */
+  public static function ajaxCallbackRebuild(array $form, FormStateInterface $form_state) {
+    $triggering_element = $form_state->getTriggeringElement();
+
+    if ($form['#form_id'] == 'field_ui_field_edit_form') {
+      $rebuild = $form['field']['default_value']['widget'][$triggering_element['#parents'][2]];
+    }
+    else {
+      $rebuild = $form[$triggering_element['#parents'][0]]['widget'][$triggering_element['#parents'][1]];
+    }
+
+    // We don't want to re-send the format/_weight options.
+    unset($rebuild['format']);
+    unset($rebuild['_weight']);
+
+    return $rebuild;
+  }
+
+  /**
+   * Helper function to import data from a CSV file
+   * @param string $form_field_name
+   * @return array $tablefield
+   */
+  function importCsv($form_field_name) {
+    $file_upload = \Drupal::request()->files->get("files[$form_field_name]", NULL, TRUE);
+    if (!empty($file_upload) && $handle = fopen($file_upload->getPathname(), 'r'))  {
+      // Populate CSV values
+      $tablefield = array();
+      $max_col_count = 0;
+      $row_count = 0;
+
+      $separator = \Drupal::config('tablefield.settings')->get('tablefield_csv_separator');
+      while (($csv = fgetcsv($handle, 0, $separator)) !== FALSE) {
+        $col_count = count($csv);
+        foreach ($csv as $col_id => $col) {
+          $tablefield['cell_' . $row_count . '_' . $col_id] = $col;
+        }
+        $max_col_count = $col_count > $max_col_count ? $col_count : $max_col_count;
+        $row_count++;
+      }
+
+      fclose($handle);
+
+      $tablefield['rebuild']['count_cols'] = $max_col_count;
+      $tablefield['rebuild']['count_rows'] = $row_count;
+
+      drupal_set_message($this->t('Successfully imported @file', array('@file' => $file_upload->getClientOriginalName())));
+
+      return $tablefield;
+    }
+
+    drupal_set_message($this->t('There was a problem importing @file.', array('@file' => $file_upload->getClientOriginalName())));
+    return FALSE;
+  }
+
+
+  /**
+   * {@inheritdoc}
+   */
+  public function errorElement(array $element, ConstraintViolationInterface $violation, array $form, FormStateInterface $form_state) {
+    return $element[0];
   }
 
 }

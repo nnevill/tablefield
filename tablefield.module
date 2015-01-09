@@ -3,30 +3,16 @@
 /**
  * @file
  * This module provides a set of fields that can be used to store
- * tabular data with a node. The implementation uses a custom CCK widget.
+ * tabular data with a node.
  */
+
+use Drupal\Core\Url;
 
 /**
  * @todo should we create a helper function for sanitization?
  *  - we should see if it makes sense to sanitize on load as well as view
  */
 
-/**
- * Implements hook_permission().
- */
-function tablefield_permission() {
-  return array(
-    'export tablefield' => array(
-      'title' => t('Export Tablefield Data as CSV'),
-    ),
-    'rebuild tablefield' => array(
-      'title' => t('Rebuild any tablefield'),
-    ),
-    'configure tablefield' => array(
-      'title' => t('Allow changes in the global tablefield module configuration'),
-    ),
-  );
-}
 
 /**
  * Implements hook_field_validate().
@@ -43,179 +29,6 @@ function tablefield_field_validate($entity_type, $entity, $field, $instance, $la
   }
 }
 
-/**
- * Implements hook_field_widget_error().
- */
-function tablefield_field_widget_error($element, $error, $form, &$form_state) {
-  form_error($element['tablefield'], $error[0]['message']);
-}
-
-
-/**
- * Implements hook_field_load().
- */
-function tablefield_field_load($entity_type, $entities, $field, $instances, $langcode, &$items, $age) {
-  foreach ($items as $delta => $table) {
-    if (isset($table[0]['value'])) {
-      $items[$delta][0]['tabledata'] = tablefield_rationalize_table(unserialize($table[0]['value']));
-    }
-  }
-}
-
-/**
- * Helper function to import data from a CSV file
- * @param array $form
- * @param array $form_state
- */
-function tablefield_import_csv($form, &$form_state) {
-  // Look for the field name by checking on the clicked button
-  if(preg_match('/tablefield-import-button-(.*)$/', $form_state['clicked_button']['#name'], $id)) {
-    // Extract the field and file name from the id of the clicked button
-    $file_name = preg_replace('/\-/', '_', $id[1]);
-    preg_match('/_([0-9]+)$/', $file_name, $field_delta);
-    // Extract the field delta from the field name
-    $delta = $field_delta[1];
-    $field_name = preg_replace('/' . $field_delta[0] . '/', '', $file_name);
-    $language = isset($form[$field_name]['#language']) ? $form[$field_name]['#language'] : 'und';
-    $file = file_save_upload($file_name, array('file_validate_extensions' => array('csv')));
-
-    if (is_object($file)) {
-      if (($handle = fopen($file->uri, "r")) !== FALSE) {
-        tablefield_delete_table_values($form_state['values'][$field_name][$language][$delta]['tablefield']);
-        tablefield_delete_table_values($form_state['input'][$field_name][$language][$delta]['tablefield']);
-
-        // Populate CSV values
-        $max_col_count = 0;
-        $row_count = 0;
-        while (($csv = fgetcsv($handle, 0, variable_get('tablefield_csv_separator', ','))) !== FALSE) {
-          $col_count = count($csv);
-          foreach ($csv as $col_id => $col) {
-            $form_state['input'][$field_name][$language][$delta]['tablefield']['cell_' . $row_count . '_' . $col_id] =
-            $form_state['values'][$field_name][$language][$delta]['tablefield']['cell_' . $row_count . '_' . $col_id] = $col;
-          }
-          $max_col_count = $col_count > $max_col_count ? $col_count : $max_col_count;
-          $row_count++;
-        }
-        fclose($handle);
-
-        $form_state['input'][$field_name][$language][$delta]['tablefield']['rebuild']['count_cols'] =
-        $form_state['values'][$field_name][$language][$delta]['tablefield']['rebuild']['count_cols'] = $max_col_count;
-        $form_state['input'][$field_name][$language][$delta]['tablefield']['rebuild']['count_rows'] =
-        $form_state['values'][$field_name][$language][$delta]['tablefield']['rebuild']['count_rows'] = $row_count;
-
-        drupal_set_message(t('Successfully imported @file', array('@file' => $file->filename)));
-      }
-      else {
-        drupal_set_message(t('There was a problem importing @file.', array('@file' => $file->filename)));
-      }
-    }
-  }
-}
-
-/**
- * Helper function to remove all values in a particular table
- * @param array $tablefield
- */
-function tablefield_delete_table_values(&$tablefield) {
-  // Empty out previously entered values
-  foreach ($tablefield as $key => $value) {
-    if (strpos($key, 'cell_') === 0) {
-      $tablefield[$key] = '';
-    }
-  }
-}
-
-/**
- * AJAX callback to rebuild the number of rows/columns.
- * The basic idea is to descend down the list of #parent elements of the
- * clicked_button in order to locate the tablefield inside of the $form
- * array. That is the element that we need to return.
- * @param array $form
- * @param array $form_state
- */
-function tablefield_rebuild_form_ajax($form, $form_state) {
-  $rebuild = $form;
-  $parents = $form_state['clicked_button']['#parents'];
-
-  if ($form['#id'] == 'field-ui-field-edit-form') {
-    $rebuild = $form['instance']['default_value_widget'][$parents[0]];
-  }
-  else {
-    foreach ($parents as $parent) {
-      // Locate the delta of the field - 0 deltas need to break after
-      // descending to the 'rebuild' element, but deltas greater than
-      // 0 need to break /before/ adding the 'rebuild' element.
-      if (is_int($parent)) {
-        $delta = $parent;
-      }
-      $tmp = $rebuild;
-
-      if ($parent == 'rebuild' || $parent == 'import') {
-        $rebuild = $delta == 0 ? $tmp[$parent] : $tmp;
-        //$rebuild = $tmp[$parent];
-        break;
-      }
-      $rebuild = $tmp[$parent];
-    }
-  }
-
-  // We don't want to re-send the format/_weight options.
-  unset($rebuild['format']);
-  unset($rebuild['_weight']);
-
-  // We need to avoid sending headers or the multipart form
-  // will make it fail. So, we need to explicitly define the
-  // whole response to ajax_deliver().
-  return array(
-    '#type' => 'ajax',
-    '#header' => FALSE,
-    '#commands' => array(
-      ajax_command_insert(NULL, drupal_render($rebuild)),
-      ajax_command_prepend(NULL, theme('status_messages')),
-    ),
-  );
-
-}
-
-/**
- * Helper function to rebuild the table structure w/o submitting the form.
- * @param array $form
- * @param array $form_state
- */
-function tablefield_rebuild_form($form, &$form_state) {
-  // Maintain the tablefield data.
-  $form_state['tablefield_rebuild'] = $form_state['input'];
-  $form_state['rebuild'] = true;
-}
-
-/**
- * Helper function to turn form elements into a structured array.
- *
- * @param array $tablefield
- *  The table as it appears in FAPI.
- */
-function tablefield_rationalize_table($tablefield) {
-  $tabledata = array();
-
-  // Rationalize the table data
-  if (!empty($tablefield)) {
-    // Remove exterraneous form data
-    $count_cols = $tablefield['rebuild']['count_cols'];
-    $count_rows = $tablefield['rebuild']['count_rows'];
-    unset($tablefield['rebuild']);
-    unset($tablefield['import']);
-
-    foreach ($tablefield as $key => $value) {
-      preg_match('/cell_(.*)_(.*)/', $key, $cell);
-      // $cell[1] is row count $cell[2] is col count
-      if ((int) $cell[1] < $count_rows && (int) $cell['2'] < $count_cols) {
-        $tabledata[$cell[1]][$cell[2]] = $value;
-      }
-    }
-  }
-
-  return $tabledata;
-}
 
 /**
  * Implements hook_theme().
@@ -223,6 +36,7 @@ function tablefield_rationalize_table($tablefield) {
 function tablefield_theme() {
   return array(
     'tablefield_view' => array(
+      'function' => 'theme_tablefield_view',
       'variables' => array(
         'header' => NULL,
         'rows' => NULL,
@@ -241,29 +55,42 @@ function tablefield_theme() {
  * Theme function for table view
  */
 function theme_tablefield_view($variables) {
-  $attributes = array(
-    'id' => 'tablefield-' . $variables['delta'],
-    'class' => array(
-      'tablefield'
-    ),
-  );
+  $render_array = array();
 
   // If the user has access to the csv export option, display it now.
-  $export = '';
-  if ($variables['export'] && user_access('export tablefield')) {
-    $url = sprintf('tablefield/export/%s/%s/%s/%s/%s', $variables['entity_type'], $variables['entity_id'], $variables['field_name'], $variables['langcode'], $variables['delta']);
-    $export = '<div id="tablefield-export-link-' . $variables['delta'] . '" class="tablefield-export-link">' . l(t('Export Table Data'), $url) . '</div>';
+  if ($variables['export'] && \Drupal::currentUser()->hasPermission('export tablefield')) {
+
+    $route_params = ['entity_type', 'entity_id', 'field_name', 'langcode', 'delta'];
+    $route_params = array_intersect_key($variables, array_flip($route_params));
+    $url = Url::fromRoute('tablefield.export', $route_params);
+
+    $render_array['export'] = array(
+      '#type' => 'container',
+      '#attributes' => array(
+        'id' => 'tablefield-export-link-' . $variables['delta'],
+        'class' => 'tablefield-export-link',
+      ),
+    );
+    $render_array['export']['link'] = array(
+      '#type' => 'link',
+      '#title' => t('Export Table Data'),
+      '#url' => $url,
+    );
   }
 
-  $render_array = array(
+  $render_array['tablefield'] = array(
     '#type' => 'table',
     '#header' => $variables['header'],
     '#rows' => $variables['rows'],
-    '#attributes' => $attributes,
+    '#attributes' => array(
+      'id' => 'tablefield-' . $variables['delta'],
+      'class' => array(
+        'tablefield'
+      ),
+    ),
+    '#prefix' => '<div id="tablefield-wrapper-' . $variables['delta'] . '" class="tablefield-wrapper">',
+    '#sufix' => 'div',
   );
 
-  return '<div id="tablefield-wrapper-' . $variables['delta'] . '" class="tablefield-wrapper">'
-    . drupal_render($render_array)
-    . $export
-    . '</div>';
+  return drupal_render($render_array);
 }

@@ -1,7 +1,7 @@
 tablefield.export:
   path: 'tablefield/export/{entity_type}/{entity_id}/{field_name}/{langcode}/{delta}'
   defaults:
-    _content: '\Drupal\tablefield\Controller\TablefieldController::exportCsv'
+    _controller: '\Drupal\tablefield\Controller\TablefieldController::exportCsv'
     _title: 'Export Table Data'
   requirements:
     _permission: 'export tablefield'

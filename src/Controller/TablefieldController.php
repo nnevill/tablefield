@@ -7,6 +7,9 @@
 
 namespace Drupal\tablefield\Controller;
 
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Drupal\tablefield\Utility\Tablefield;
+
 /**
  * Controller routines for tablefield routes.
  */
@@ -30,50 +33,30 @@ class TablefieldController {
    *   A render array representing the administrative page content.
    */
   public function exportCsv($entity_type, $entity_id, $field_name, $langcode, $delta) {
+
     $filename = sprintf('%s_%s_%s_%s_%s.csv', $entity_type, $entity_id, $field_name, $langcode, $delta);
-    $uri = 'temporary://' . $filename;
-  
-    // Attempt to load the entity.
-    $ids = array($entity_id);
-    $entity = entity_load($entity_type, $ids);
-    $entity = array_pop($entity);
-  
-    // Ensure that the data is available and that we can load a
-    // temporary file to stream the data.
-    if (isset($entity->{$field_name}[$langcode][$delta]['value']) && $fp = fopen($uri, 'w+')) {
-      $table = tablefield_rationalize_table(unserialize($entity->{$field_name}[$langcode][$delta]['value']));
-  
-      // Save the data as a CSV file.
-      foreach ($table as $row) {
-        fputcsv($fp, $row, variable_get('tablefield_csv_separator', ','));
+
+    $entity = entity_load($entity_type, $entity_id);
+    $table = Tablefield::rationalizeTable($entity->{$field_name}[$delta]->tablefield);
+    $separator = \Drupal::config('tablefield.settings')->get('tablefield_csv_separator');
+
+    $response = new StreamedResponse();
+    $response->setCallback(function() use ($table, $separator) {
+      ob_clean();
+      $handle = fopen('php://output', 'w+');
+      if (!empty($table) && $handle) {
+        foreach ($table as $row) {
+          fputcsv($handle, $row, $separator);
+        }
       }
-  
-      fclose($fp);
-  
-      // Add basic HTTP headers.
-      $http_headers = array(
-        'Content-Type' => 'text/csv',
-        'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        'Content-Length' => filesize($uri),
-      );
-  
-      // IE needs special headers.
-      if(strpos($_SERVER['HTTP_USER_AGENT'], 'MSIE')) {
-        $http_headers['Cache-Control'] = 'must-revalidate, post-check=0, pre-check=0';
-        $http_headers['Pragma'] = 'public';
-      }
-      else {
-        $http_headers['Pragma'] = 'no-cache';
-      }
-  
-      // Stream the download.
-      file_transfer($uri, $http_headers);
-    }
-  
-    // Something went wrong.
-    drupal_add_http_header('Status', '500 Internal Server Error');
-    print t('Error generating CSV.');
-    drupal_exit();
+      fclose($handle);
+    });
+
+    $response->setStatusCode(200);
+    $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
+    $response->headers->set('Content-Disposition','attachment; filename="'. $filename .'"');
+
+    return $response;
   }
 
 }
