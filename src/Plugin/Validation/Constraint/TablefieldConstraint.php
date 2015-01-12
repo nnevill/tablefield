@@ -45,17 +45,10 @@ class TablefieldConstraint extends Constraint implements ConstraintValidatorInte
    * {@inheritdoc}
    */
   public function validate($value, Constraint $constraint) {
-    // Catch empty form submissions for required tablefields
-// @TODO not sure how to implement this here.
-/*
-    if ($instance['required'] && isset($value) && tablefield_field_is_empty($items[0], $field)) {
-      $message = t('@field is a required field.', array('@field' => $instance['label']));
-      $errors[$field['field_name']][$langcode][0]['tablefield'][] = array(
-        'error' => 'empty_required_tablefield',
-        'message' => $message,
-      );
+    if ($value->getFieldDefinition()->isRequired() && $value->isEmpty()) {
+      $this->buildViolation($constraint->message)
+        ->addViolation();
     }
-*/
   }
 }
 

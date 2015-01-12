@@ -20,8 +20,7 @@ use Drupal\Core\Field\FieldItemBase;
  *   label = @Translation("Table Field"),
  *   description = @Translation("Stores a table of text fields"),
  *   default_widget = "tablefield",
- *   default_formatter = "tablefield",
- *   constraints = {"PrimitiveType" = {}, "Tablefield" = {}}
+ *   default_formatter = "tablefield"
  * )
  */
 class TablefieldItem extends FieldItemBase {

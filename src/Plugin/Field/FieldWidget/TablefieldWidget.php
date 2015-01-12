@@ -8,6 +8,7 @@
 namespace Drupal\tablefield\Plugin\Field\FieldWidget;
 
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Field\FieldItemList;
 use Drupal\Core\Field\WidgetBase;
 use Drupal\Core\Form\FormStateInterface;
 use Symfony\Component\Validator\ConstraintViolationInterface;
@@ -257,6 +258,8 @@ class TablefieldWidget extends WidgetBase {
       $element['#type'] = 'text_format';
       $element['#format'] = isset($items[$delta]->format) ? $items[$delta]->format : NULL;
     }
+
+    $element['#element_validate'][] = array($this, 'validateTablefield');
   
     return $element;
   }
@@ -333,6 +336,15 @@ class TablefieldWidget extends WidgetBase {
     return FALSE;
   }
 
+  function validateTablefield(array &$element, FormStateInterface &$form_state, array $form) {
+    if ($element['#required'] && $form_state->getTriggeringElement()['#type'] == 'submit') {
+      $items = new FieldItemList($this->fieldDefinition);
+      $this->extractFormValues($items, $form, $form_state);
+      if (!$items->count()) {
+        $form_state->setError($element, t('!name field is required.', array('!name' => $this->fieldDefinition->getLabel())));
+      }
+    }
+  }
 
   /**
    * {@inheritdoc}
