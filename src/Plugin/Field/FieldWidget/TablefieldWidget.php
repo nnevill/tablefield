@@ -37,6 +37,11 @@ class TablefieldWidget extends WidgetBase {
     $field_name = $field->getName();
     $field_settings = $field->getSettings();
 
+    if (!empty($field->default_value[$delta])) {
+      $field_default = $field->default_value[$delta];
+      $field_default['tablefield'] = unserialize($field_default['value']);
+    }
+
     $triggering_element = $form_state->getTriggeringElement();
   
     $element['#type'] = 'tablefield';
@@ -77,9 +82,8 @@ class TablefieldWidget extends WidgetBase {
     elseif (isset($items[$delta]->value)) {
       $default_value['tablefield'] = unserialize($items[$delta]->value);
     }
-    elseif (!$is_field_settings_default_widget_form && !empty($field->default_value[$delta])) {
-      $default_value = $field->default_value[$delta];
-      $default_value['tablefield'] = unserialize($default_value['value']);
+    elseif (!$is_field_settings_default_widget_form && !empty($field_default)) {
+      $default_value = $field_default;
     }
 
     $element['tablefield'] = array(
@@ -112,16 +116,14 @@ class TablefieldWidget extends WidgetBase {
       );
       for ($ii = 0; $ii < $count_cols; $ii++) {
         $cell_default = isset($default_value['tablefield']["cell_${i}_${ii}"]) ? $default_value['tablefield']["cell_${i}_${ii}"] : '';
-        if (!empty($cell_default) && !empty($field_settings['lock_values']) && !$is_field_settings_default_widget_form) {
+        $field_cell_default = !empty($field_default['tablefield']["cell_${i}_${ii}"]) ? $field_default['tablefield']["cell_${i}_${ii}"] : '';
+
+        if (!empty($field_cell_default) && !empty($field_settings['lock_values']) && !$is_field_settings_default_widget_form) {
           // The value still needs to be send on every load in order for the
           // table to be saved correctly.
           $element['tablefield']['cell_' . $i . '_' . $ii] = array(
-            '#type' => 'value',
-            '#value' => $cell_default,
-          );
-          // Display the default value, since it's not editable.
-          $element['tablefield']['cell_' . $i . '_' . $ii . '_display'] = array(
             '#type' => 'item',
+            '#value' => $cell_default,
             '#title' => $cell_default,
             '#prefix' => '<td style="width:' . floor(100/$count_cols) . '%">',
             '#suffix' => '</td>',
@@ -137,7 +139,7 @@ class TablefieldWidget extends WidgetBase {
               'class' => array('tablefield-row-' . $i, 'tablefield-col-' . $ii),
               'style' => 'width:100%'
             ),
-            '#default_value' => (empty($field_value)) ? $cell_default : $field_value,
+            '#default_value' => $cell_default,
             '#prefix' => '<td style="width:' . floor(100/$count_cols) . '%">',
             '#suffix' => '</td>',
           );
