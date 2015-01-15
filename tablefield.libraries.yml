@@ -1,5 +1,0 @@
-form_css:
-  version: VERSION
-  css:
-    theme:
-      tablefield.css: {}

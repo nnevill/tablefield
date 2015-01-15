@@ -45,7 +45,7 @@ class TablefieldFormatter extends FormatterBase {
   
       // Rationalize the stored data
       if (!empty($table->tablefield)) {
-        $tabledata = Tablefield::rationalizeTable($table->tablefield);
+        $tabledata = $table->tablefield['table'];//Tablefield::rationalizeTable($table->tablefield);
       }
   
       // Run the table through input filters
@@ -77,18 +77,49 @@ class TablefieldFormatter extends FormatterBase {
   
         $header = $noheader ? NULL : $header_data;
 
-        // Theme the table for display
-        $render_array = array(
-          '#theme' => 'tablefield_view',
+        $render_array = array();
+
+        // If the user has access to the csv export option, display it now.
+        if ($field_settings['export'] && \Drupal::currentUser()->hasPermission('export tablefield')) {
+
+          $route_params = array(
+            'entity_type' => $entity_type,
+            'entity_id' => $entity_id,
+            'field_name' => $field_name,
+            'langcode' => $items->getLangcode(),
+            'delta' => $delta,
+          );
+
+          $url = Url::fromRoute('tablefield.export', $route_params);
+
+          $render_array['export'] = array(
+            '#type' => 'container',
+            '#attributes' => array(
+              'id' => 'tablefield-export-link-' . $variables['delta'],
+              'class' => 'tablefield-export-link',
+            ),
+          );
+          $render_array['export']['link'] = array(
+            '#type' => 'link',
+            '#title' => $this->t('Export Table Data'),
+            '#url' => $url,
+          );
+        }
+
+        $render_array['tablefield'] = array(
+          '#type' => 'table',
           '#header' => $header,
           '#rows' => $tabledata,
-          '#delta' => $delta,
-          '#export' => $field_settings['export'],
-          '#entity_type' => $entity_type,
-          '#entity_id' => $entity_id,
-          '#field_name' => $field_name,
-          '#langcode' => $items->getLangcode(),
+          '#attributes' => array(
+            'id' => 'tablefield-' . $delta,
+            'class' => array(
+              'tablefield'
+            ),
+          ),
+          '#prefix' => '<div id="tablefield-wrapper-'. $delta .'" class="tablefield-wrapper">',
+          '#sufix' => 'div',
         );
+
         $elements[$delta] = $render_array;
       }
   

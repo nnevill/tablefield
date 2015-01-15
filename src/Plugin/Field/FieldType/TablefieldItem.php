@@ -44,51 +44,6 @@ class TablefieldItem extends FieldItemBase {
     );
   }
 
-  /**
-   * {@inheritdoc}
-   */
-  public function isEmpty() {
-    $value = $this->getValue();
-
-    // Remove the extra keys to see if the table cells are all empty
-    unset($value['tablefield']['rebuild']);
-    unset($value['tablefield']['import']);
-
-    // if tablefield is same as the field settings, then consider it empty (but only for node edit forms)
-    /*if (empty($value['is_field_settings'])) {
-      $field = $this->getFieldDefinition();
-      if (!empty($field->default_value[$this->name])) {
-        $default_value = $field->default_value[$this->name];
-      }
-      else {
-        $default_value = $field->default_value[0];
-      }
-
-      $default_value['tablefield'] = unserialize($default_value['value']);
-      unset($default_value['tablefield']['rebuild']);
-      unset($default_value['tablefield']['import']);
-
-      if ($value['tablefield'] == $default_value['tablefield']) {
-        return TRUE;
-      }
-    }*/
-
-    // Allow the field settings form to have at least one emtpy table
-    if (!empty($value['is_field_settings']) && $this->name == 0) {
-      return FALSE;
-    }
-
-
-    if (!empty($value['tablefield'])) {
-      foreach ($value['tablefield'] as $cell) {
-        if (!empty($cell)) {
-          return FALSE;
-        }
-      }
-    }
-  
-    return TRUE;
-  }
 
   /**
    * {@inheritdoc}
@@ -97,6 +52,7 @@ class TablefieldItem extends FieldItemBase {
     return array(
       'export' => 0,
       'restrict_rebuild' => 1,
+      'restrict_import' => 1,
       'lock_values' => 0,
       'cell_processing' => 0,
     );
@@ -118,6 +74,11 @@ class TablefieldItem extends FieldItemBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Restrict rebuilding to users with the permission "rebuild tablefield"'),
       '#default_value' => $settings['restrict_rebuild'],
+    );
+    $form['restrict_import'] = array(
+      '#type' => 'checkbox',
+      '#title' => $this->t('Restrict importing to users with the permission "import tablefield"'),
+      '#default_value' => $settings['restrict_import'],
     );
     $form['lock_values'] = array(
       '#type' => 'checkbox',
@@ -163,14 +124,38 @@ class TablefieldItem extends FieldItemBase {
     return $properties;
   }
 
+
+  public function setValue($value, $notify = TRUE) {
+    // if text_format is enabled, the tablefield is shifted under value
+    if (!empty($value['value']['tablefield'])) {
+      $value['tablefield'] = $value['value']['tablefield'];
+      // locked values can get at the end of the table, need to sort
+      ksort($value['tablefield']['table']);
+      $value['value'] = serialize($value['tablefield']['table']);
+    }
+    else if (!empty($value['value']) && empty($value['tablefield']['table'])) {
+      $value['tablefield']['table'] = unserialize($value['value']);
+      $value['tablefield']['rebuild']['rows'] = isset($value['tablefield']['table']) ? count($value['tablefield']['table']) : 0;
+      $value['tablefield']['rebuild']['cols'] = isset($value['tablefield']['table'][0]) ? count($value['tablefield']['table'][0]) : 0;
+    }
+    else if (empty($value['value']) && !empty($value['tablefield']['table'])) {
+      ksort($value['tablefield']['table']);
+      $value['value'] = serialize($value['tablefield']['table']);
+    }
+    parent::setValue($value, $notify);
+  }
+
   /**
    * {@inheritdoc}
    */
-  public function setValue($values, $notify = TRUE) {
-    if (!empty($values['value']) && empty($values['tablefield'])) {
-      $values['tablefield'] = unserialize($values['value']);
+  public function getValue() {
+    $value = parent::getValue();
+    if (!empty($value['value']) && empty($value['tablefield'])) {
+      $value['tablefield']['table'] = unserialize($value['value']);
+      $value['tablefield']['rebuild']['rows'] = isset($value['tablefield']['table']) ? count($value['tablefield']['table']) : 0;
+      $value['tablefield']['rebuild']['cols'] = isset($value['tablefield']['table'][0]) ? count($value['tablefield']['table'][0]) : 0;
     }
-    parent::setValue($values, $notify);
+    return $value;
   }
 
 
@@ -182,11 +167,38 @@ class TablefieldItem extends FieldItemBase {
     $tablefield = array(
       'cell_0_0' => 'Sample 1',
       'cell_0_1' => 'Sample 2',
-      'rebuild' => ['count_rows' => 1, 'count_cols' => 2],
+      'rebuild' => ['rows' => 1, 'cols' => 2],
     );
     $values['value'] = serialize($tablefield);
     return $values;
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  public function isEmpty() {
+    $value = $this->getValue();
+
+    // Remove the extra keys to see if the table cells are all empty
+    unset($value['tablefield']['rebuild']);
+    unset($value['tablefield']['import']);
+
+    // Allow the field settings form to have at least one emtpy table
+    if (!empty($value['is_field_settings']) && $this->name == 0) {
+      return FALSE;
+    }
+
+    if (isset($value['tablefield']['table'])) {
+      foreach ($value['tablefield']['table'] as $row) {
+        foreach ($row as $cell) {
+          if (!empty($cell)) {
+            return FALSE;
+          }
+        }
+      }
+    }
+
+    return TRUE;
+  }
 
 }
