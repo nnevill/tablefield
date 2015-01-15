@@ -9,8 +9,9 @@ namespace Drupal\tablefield\Plugin\Field\FieldFormatter;
 
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FormatterBase;
+use Drupal\Core\Url;
 use Drupal\Component\Utility\String;
-use Drupal\tablefield\Utility\Tablefield;
+//use Drupal\tablefield\Utility\Tablefield;
 
 /**
  * Plugin implementation of the 'geostore_wkt' formatter.

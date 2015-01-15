@@ -37,7 +37,7 @@ class TablefieldController {
     $filename = sprintf('%s_%s_%s_%s_%s.csv', $entity_type, $entity_id, $field_name, $langcode, $delta);
 
     $entity = entity_load($entity_type, $entity_id);
-    $table = Tablefield::rationalizeTable($entity->{$field_name}[$delta]->tablefield);
+    $table = $entity->{$field_name}[$delta]->tablefield['table'];//Tablefield::rationalizeTable($entity->{$field_name}[$delta]->tablefield);
     $separator = \Drupal::config('tablefield.settings')->get('tablefield_csv_separator');
 
     $response = new StreamedResponse();
