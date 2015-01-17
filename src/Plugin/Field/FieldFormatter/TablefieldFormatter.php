@@ -45,8 +45,8 @@ class TablefieldFormatter extends FormatterBase {
     foreach ($items as $delta => $table) {
   
       // Rationalize the stored data
-      if (!empty($table->tablefield)) {
-        $tabledata = $table->tablefield['table'];//Tablefield::rationalizeTable($table->tablefield);
+      if (!empty($table->value)) {
+        $tabledata = $table->value;//Tablefield::rationalizeTable($table->tablefield);
       }
   
       // Run the table through input filters

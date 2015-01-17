@@ -42,27 +42,27 @@ class TablefieldWidget extends WidgetBase {
     }
 
     if (isset($items[$delta]->value)) {
-      $default_value['tablefield'] = $items[$delta]->tablefield;
+      $default_value = $items[$delta];
     }
     elseif (!$is_field_settings_default_widget_form && !empty($field_default)) {
       // load field settings defaults in case current item is empty
       $default_value = $field_default;
     }
     else {
-      $default_value['tablefield']['table'] = array();
+      $default_value = (object) array('value' => array(), 'rebuild' => array());
     }
 
-    $cols = isset($default_value['tablefield']['rebuild']['cols']) ? $default_value['tablefield']['rebuild']['cols'] : 5;
-    $rows = isset($default_value['tablefield']['rebuild']['rows']) ? $default_value['tablefield']['rebuild']['rows'] : 5;
+    $cols = isset($default_value->rebuild['cols']) ? $default_value->rebuild['cols'] : 5;
+    $rows = isset($default_value->rebuild['rows']) ? $default_value->rebuild['rows'] : 5;
 
     $element = array(
       '#type' => 'tablefield',
       '#description' => $this->t('The first row will appear as the table header. Leave the first row blank if you do not need a header.'),
       '#cols' => $cols,
       '#rows' => $rows,
-      '#default_value' => $default_value['tablefield']['table'],
-      '#lock' => $field_settings['lock_values'],
-      '#locked_cells' => !empty($field_default['tablefield']['table']) ? $field_default['tablefield']['table'] : array(),
+      '#default_value' => $default_value->value,
+      '#lock' => !$is_field_settings_default_widget_form && $field_settings['lock_values'],
+      '#locked_cells' => !empty($field_default->value) ? $field_default->value : array(),
       '#rebuild' => \Drupal::currentUser()->hasPermission('rebuild tablefield'),
       '#import' => \Drupal::currentUser()->hasPermission('import tablefield'),
     ) + $element;
@@ -79,7 +79,7 @@ class TablefieldWidget extends WidgetBase {
 
     $element['#element_validate'][] = array($this, 'validateTablefield');
 
-    $form['#attributes']['enctype'] = 'multipart/form-data';
+    //$form['#attributes']['enctype'] = 'multipart/form-data';
   
     // Allow the user to select input filters
     if (!empty($field_settings['cell_processing'])) {
@@ -94,18 +94,7 @@ class TablefieldWidget extends WidgetBase {
     return $element;
   }
 
-  /**
-   * {@inheritdoc}
-   */
-  // TablefieldItem::setValue handles this
-  /*public function massageFormValues(array $values, array $form, FormStateInterface $form_state) {
-    foreach ($values as $delta => $value) {
-      $values[$delta]['value'] = serialize($value['tablefield']['table']);
-    }
-    return $values;
-  }*/
-
-  function validateTablefield(array &$element, FormStateInterface &$form_state, array $form) {
+  public function validateTablefield(array &$element, FormStateInterface &$form_state, array $form) {
     if ($element['#required'] && $form_state->getTriggeringElement()['#type'] == 'submit') {
       $items = new FieldItemList($this->fieldDefinition);
       $this->extractFormValues($items, $form, $form_state);

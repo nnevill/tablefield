@@ -46,51 +46,24 @@ class Tablefield extends FormElement {
   public static function processTablefield(&$element, FormStateInterface $form_state, &$complete_form) {
     
     $value = is_array($element['#value']) ? $element['#value'] : array();
-    $field_name = $element['#parents'][0];
-    $delta = $element['#delta'];
-    
-    // check what triggered this
-    // we might need to rebuild or to import
-    $triggering_element = $form_state->getTriggeringElement();
+    // string to uniquely identify DOM elements
+    $id = implode('-', $element['#parents']);
 
-    if (isset($triggering_element['#name']) && $triggering_element['#name'] == 'tablefield_rebuild_' . $field_name . '_' . $delta) {
-      //$value = $form_state->getValue([$field_name, $delta]);
-
-      $element['#rows'] = $value['tablefield']['rebuild']['rows'];
-      $element['#cols'] = $value['tablefield']['rebuild']['cols'];
-
-      drupal_set_message(t('Table structure rebuilt.'), 'status', FALSE);
+    $storage = NestedArray::getValue($form_state->getStorage(), $element['#parents']);
+    if ($storage) {
+      $element['#cols'] = $storage['tablefield']['rebuild']['cols'];
+      $element['#rows'] = $storage['tablefield']['rebuild']['rows'];
     }
-    elseif (isset($triggering_element['#name']) && $triggering_element['#name'] == 'tablefield_import_' . $field_name . '-' . $delta) {
-      // Import CSV
-      $imported_tablefield = self::importCsv($field_name . '_' . $delta);
 
-      if ($imported_tablefield) {
-
-        $element['#rows'] = $imported_tablefield['rebuild']['rows'];
-        $element['#cols'] = $imported_tablefield['rebuild']['cols'];
-
-        $parents = array_slice($triggering_element['#parents'], 0, -2, TRUE);
-        $form_state->setValue($parents, $imported_tablefield);
-
-        // Unfortunately no nice cherry-pick setUserInput available, have to do it long way
-        $input = $form_state->getUserInput();
-        NestedArray::setValue($input, $parents, $imported_tablefield);
-        $form_state->setUserInput($input);
-
-        $value = $imported_tablefield['table'];
-      }
-    }
-    
     $element['#tree'] = TRUE;
 
     // @TODO: could a twig template be used for what's below?
 
     $element['tablefield'] = array(
-      '#attributes' => array('id' => 'form-tablefield-' . $field_name . '-' . $delta, 'class' => array('form-tablefield')),
+      '#attributes' => array('class' => array('form-tablefield')),
       '#type' => 'fieldset',
       '#tree' => TRUE,
-      '#prefix' => '<div id="tablefield-' . $field_name . '-' . $delta . '-wrapper">',
+      '#prefix' => '<div id="tablefield-'. $id .'-wrapper">',
       '#suffix' => '</div>',
     );
 
@@ -107,7 +80,7 @@ class Tablefield extends FormElement {
       $zebra = $i % 2 == 0 ? 'even' : 'odd';
       $element['tablefield']['table'][$i] = array(
         '#type' => 'markup',
-        '#prefix' => '<tr class="tablefield-row-' . $i . ' ' . $zebra . '">',
+        '#prefix' => '<tr class="tablefield-row tablefield-row-'. $i .' '. $zebra .'">',
         '#sufix' => '</tr>',
       );
       for ($ii = 0; $ii < $cols; $ii++) {
@@ -128,8 +101,7 @@ class Tablefield extends FormElement {
             '#maxlength' => 2048,
             '#size' => 0,
             '#attributes' => array(
-              'id' => 'tablefield_' . $delta . '_cell_' . $i . '_' . $ii,
-              'class' => array('tablefield-row-' . $i, 'tablefield-col-' . $ii),
+              'class' => array('tablefield-row-'. $i, 'tablefield-col-'. $ii),
               'style' => 'width:100%'
             ),
             '#default_value' => $cell_value,
@@ -180,16 +152,17 @@ class Tablefield extends FormElement {
         '#default_value' => $rows,
       );
       $element['tablefield']['rebuild']['rebuild'] = array(
-        '#type' => 'button',
+        '#type' => 'submit',
         '#value' => t('Rebuild Table'),
-        '#name' => 'tablefield_rebuild_' . $field_name . '_' . $delta,
+        '#name' => 'tablefield-rebuild-'. $id,
         '#attributes' => array(
           'class' => array('tablefield-rebuild'),
         ),
+        '#submit' => array(array(get_called_class(), 'submitCallbackRebuild')),
         '#ajax' => array(
           'callback' => 'Drupal\tablefield\Element\Tablefield::ajaxCallbackRebuild',
           'progress' => array('type' => 'throbber', 'message' => NULL),
-          'wrapper' => 'tablefield-' . $field_name . '-' . $delta . '-wrapper',
+          'wrapper' => 'tablefield-'. $id .'-wrapper',
           'effect' => 'fade',
         ),
       );
@@ -204,22 +177,23 @@ class Tablefield extends FormElement {
         '#open' => FALSE,
       );
       $element['tablefield']['import']['csv'] = array(
-        '#name' => 'files[' . $field_name . '_' . $delta . ']',
+        '#name' => 'files['. $id .']',
         '#title' => 'File upload',
         '#type' => 'file',
       );
 
       $element['tablefield']['import']['import'] = array(
-        '#type' => 'button',
+        '#type' => 'submit',
         '#value' => t('Upload CSV'),
-        '#name' => 'tablefield_import_' . $field_name . '-' . $delta,
+        '#name' => 'tablefield-import-'. $id,
         '#attributes' => array(
           'class' => array('tablefield-rebuild'),
         ),
+        '#submit' => array(array(get_called_class(), 'submitCallbackRebuild')),
         '#ajax' => array(
           'callback' => 'Drupal\tablefield\Element\Tablefield::ajaxCallbackRebuild',
           'progress' => array('type' => 'throbber', 'message' => NULL),
-          'wrapper' => 'tablefield-' . $field_name . '-' . $delta . '-wrapper',
+          'wrapper' => 'tablefield-'. $id .'-wrapper',
           'effect' => 'fade',
         ),
       );
@@ -248,6 +222,41 @@ class Tablefield extends FormElement {
 
     return $rebuild;
   }
+
+  public static function submitCallbackRebuild(array $form, FormStateInterface $form_state) {
+    // check what triggered this
+    // we might need to rebuild or to import
+    $triggering_element = $form_state->getTriggeringElement();
+
+    $id = implode('-', array_slice($triggering_element['#parents'], 0, -3, TRUE));
+    $parents = array_slice($triggering_element['#parents'], 0, -2, TRUE);
+    $value = $form_state->getValue($parents);
+
+    if (isset($triggering_element['#name']) && $triggering_element['#name'] == 'tablefield-rebuild-'. $id) {
+      $parents[] = 'rebuild';
+      NestedArray::setValue($form_state->getStorage(), $parents, $value['rebuild']);
+
+      drupal_set_message(t('Table structure rebuilt.'), 'status', FALSE);
+    }
+    elseif (isset($triggering_element['#name']) && $triggering_element['#name'] == 'tablefield-import-'. $id) {
+      // Import CSV
+      $imported_tablefield = static::importCsv($id);
+
+      if ($imported_tablefield) {
+
+        $form_state->setValue($parents, $imported_tablefield);
+
+        $input = $form_state->getUserInput();
+        NestedArray::setValue($input, $parents, $imported_tablefield);
+        $form_state->setUserInput($input);
+
+        $parents[] = 'rebuild';
+        NestedArray::setValue($form_state->getStorage(), $parents, $imported_tablefield['rebuild']);
+      }
+    }
+    $form_state->setRebuild();
+  }
+
 
   /**
    * Helper function to import data from a CSV file
