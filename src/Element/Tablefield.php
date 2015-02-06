@@ -12,7 +12,7 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Component\Utility\NestedArray;
 
 /**
- * Provides a form element for input of multiple-line text.
+ * Provides a form element for tabular data.
  *
  * @FormElement("tablefield")
  */
@@ -34,21 +34,20 @@ class Tablefield extends FormElement {
       '#process' => array(
         array($class, 'processTablefield'),
       ),
-
       '#theme_wrappers' => array('form_element'),
     );
   }
-
 
   /**
    * Processes a checkboxes form element.
    */
   public static function processTablefield(&$element, FormStateInterface $form_state, &$complete_form) {
-    
     $value = is_array($element['#value']) ? $element['#value'] : array();
+
     // string to uniquely identify DOM elements
     $id = implode('-', $element['#parents']);
 
+    // this is being set in rebuild and import ajax calls
     $storage = NestedArray::getValue($form_state->getStorage(), $element['#parents']);
     if ($storage) {
       $element['#cols'] = $storage['tablefield']['rebuild']['cols'];
@@ -57,41 +56,28 @@ class Tablefield extends FormElement {
 
     $element['#tree'] = TRUE;
 
-    // @TODO: could a twig template be used for what's below?
-
     $element['tablefield'] = array(
-      '#attributes' => array('class' => array('form-tablefield')),
       '#type' => 'fieldset',
-      '#tree' => TRUE,
+      '#attributes' => array('class' => array('form-tablefield')),
       '#prefix' => '<div id="tablefield-'. $id .'-wrapper">',
       '#suffix' => '</div>',
+
     );
 
     $element['tablefield']['table'] = array(
-      '#type' => 'markup',
-      '#prefix' => '<table>',
-      '#suffix' => '</table>',
+      '#type' => 'table',
     );
 
-    $cols = isset($element['#cols']) ? $element['#cols'] : 5;
-    $rows = isset($element['#rows']) ? $element['#rows'] : 5;
+    $rows = isset($element['#rows']) ? $element['#rows'] : \Drupal::config('tablefield.settings')->get('rows');
+    $cols = isset($element['#cols']) ? $element['#cols'] : \Drupal::config('tablefield.settings')->get('cols');
 
     for ($i = 0; $i < $rows; $i++) {
-      $zebra = $i % 2 == 0 ? 'even' : 'odd';
-      $element['tablefield']['table'][$i] = array(
-        '#type' => 'markup',
-        '#prefix' => '<tr class="tablefield-row tablefield-row-'. $i .' '. $zebra .'">',
-        '#sufix' => '</tr>',
-      );
       for ($ii = 0; $ii < $cols; $ii++) {
-
         if (!empty($element['#locked_cells'][$i][$ii]) && !empty($element['#lock'])) {
           $element['tablefield']['table'][$i][$ii] = array(
             '#type' => 'item',
             '#value' => $element['#locked_cells'][$i][$ii],
             '#title' => $element['#locked_cells'][$i][$ii],
-            '#prefix' => '<td style="width:' . floor(100/$cols) . '%">',
-            '#suffix' => '</td>',
           );
         }
         else {
@@ -105,8 +91,6 @@ class Tablefield extends FormElement {
               'style' => 'width:100%'
             ),
             '#default_value' => $cell_value,
-            '#prefix' => '<td style="width:' . floor(100/$count_cols) . '%">',
-            '#suffix' => '</td>',
           );
         }
       }
@@ -117,7 +101,6 @@ class Tablefield extends FormElement {
     if (empty($element['#rebuild'])) {
       $element['tablefield']['rebuild'] = array (
         '#type' => 'value',
-        '#tree' => TRUE,
         'cols' => array(
           '#type' => 'value',
           '#value' => $cols,
@@ -131,7 +114,6 @@ class Tablefield extends FormElement {
     else {
       $element['tablefield']['rebuild'] = array(
         '#type' => 'details',
-        '#tree' => TRUE,
         '#title' => t('Change number of rows/columns.'),
         '#open' => FALSE,
       );
@@ -139,16 +121,12 @@ class Tablefield extends FormElement {
         '#title' => t('How many Columns'),
         '#type' => 'textfield',
         '#size' => 5,
-        '#prefix' => '<div class="clearfix">',
-        '#suffix' => '</div>',
         '#default_value' => $cols,
       );
       $element['tablefield']['rebuild']['rows'] = array(
         '#title' => t('How many Rows'),
         '#type' => 'textfield',
         '#size' => 5,
-        '#prefix' => '<div class="clearfix">',
-        '#suffix' => '</div>',
         '#default_value' => $rows,
       );
       $element['tablefield']['rebuild']['rebuild'] = array(
@@ -172,7 +150,6 @@ class Tablefield extends FormElement {
     if (!empty($element['#import'])) {
       $element['tablefield']['import'] = array(
         '#type' => 'details',
-        '#tree' => TRUE,
         '#title' => t('Import from CSV'),
         '#open' => FALSE,
       );
@@ -243,7 +220,6 @@ class Tablefield extends FormElement {
       $imported_tablefield = static::importCsv($id);
 
       if ($imported_tablefield) {
-
         $form_state->setValue($parents, $imported_tablefield);
 
         $input = $form_state->getUserInput();
@@ -271,7 +247,7 @@ class Tablefield extends FormElement {
       $max_cols = 0;
       $rows = 0;
 
-      $separator = \Drupal::config('tablefield.settings')->get('tablefield_csv_separator');
+      $separator = \Drupal::config('tablefield.settings')->get('csv_separator');
       while (($csv = fgetcsv($handle, 0, $separator)) !== FALSE) {
         foreach ($csv as $value) {
           $tablefield['table'][$rows][] = $value;
@@ -282,14 +258,12 @@ class Tablefield extends FormElement {
         }
         $rows++;
       }
-
       fclose($handle);
 
       $tablefield['rebuild']['cols'] = $max_cols;
       $tablefield['rebuild']['rows'] = $rows;
 
       drupal_set_message(t('Successfully imported @file', array('@file' => $file_upload->getClientOriginalName())));
-
       return $tablefield;
     }
 

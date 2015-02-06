@@ -1,2 +1,4 @@
-tablefield_csv_separator: ','
+csv_separator: ','
+rows: 5
+cols: 5
 

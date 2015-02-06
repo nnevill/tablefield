@@ -34,11 +34,10 @@ class TablefieldWidget extends WidgetBase {
     $is_field_settings_default_widget_form = $form_state->getBuildInfo()['form_id'] == 'field_ui_field_edit_form' ? 1 : 0;
 
     $field = $items[0]->getFieldDefinition();
-    //$field_name = $field->getName();
     $field_settings = $field->getSettings();
 
     if (!empty($field->default_value[$delta])) {
-      $field_default = $field->default_value[$delta];
+      $field_default = (object) $field->default_value[$delta];
     }
 
     if (isset($items[$delta]->value)) {
@@ -52,11 +51,16 @@ class TablefieldWidget extends WidgetBase {
       $default_value = (object) array('value' => array(), 'rebuild' => array());
     }
 
-    $cols = isset($default_value->rebuild['cols']) ? $default_value->rebuild['cols'] : 5;
-    $rows = isset($default_value->rebuild['rows']) ? $default_value->rebuild['rows'] : 5;
+    // make sure rows and cols are set
+    $rows = isset($default_value->rebuild['rows']) ?
+      $default_value->rebuild['rows'] : \Drupal::config('tablefield.settings')->get('rows');
+
+    $cols = isset($default_value->rebuild['cols']) ?
+      $default_value->rebuild['cols'] : \Drupal::config('tablefield.settings')->get('cols');
 
     $element = array(
       '#type' => 'tablefield',
+      '#description_display' => 'before',
       '#description' => $this->t('The first row will appear as the table header. Leave the first row blank if you do not need a header.'),
       '#cols' => $cols,
       '#rows' => $rows,
@@ -69,25 +73,15 @@ class TablefieldWidget extends WidgetBase {
 
     if ($is_field_settings_default_widget_form) {
       $element['#description'] = $this->t('This form defines the table field defaults, but the number of rows/columns and content can be overridden on a per-node basis. The first row will appear as the table header. Leave the first row blank if you do not need a header.');
-
-      // This we need in the TablefieldItem::isEmpty check
-      $element['is_field_settings'] = array(
-        '#type' => 'value',
-        '#value' => 1,
-      );
     }
 
     $element['#element_validate'][] = array($this, 'validateTablefield');
-
-    //$form['#attributes']['enctype'] = 'multipart/form-data';
   
     // Allow the user to select input filters
     if (!empty($field_settings['cell_processing'])) {
       $element['#base_type'] = $element['#type'];
       $element['#type'] = 'text_format';
-      if (!empty($field_default['format']) || !empty($items[$delta]->format)) {
-        $element['#format'] = isset($items[$delta]->format) ? $items[$delta]->format : $field_default['format'];
-      }
+      $element['#format'] = isset($default_value->format) ? $default_value->format : NULL;
       $element['#editor'] = FALSE;
     }
 
@@ -106,6 +100,7 @@ class TablefieldWidget extends WidgetBase {
 
   /**
    * {@inheritdoc}
+   * set error only on the first item in a multi-valued field
    */
   public function errorElement(array $element, ConstraintViolationInterface $violation, array $form, FormStateInterface $form_state) {
     return $element[0];

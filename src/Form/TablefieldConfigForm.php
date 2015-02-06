@@ -19,17 +19,39 @@ class TablefieldConfigForm extends ConfigFormBase {
     return 'tablefield_config_form';
   }
 
+  protected function getEditableConfigNames() {
+    return ['tablefield.settings'];
+  }
+
   /**
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
-    $form['tablefield_csv_separator'] = array(
+    $form['csv_separator'] = array(
       '#type' => 'textfield',
       '#title' => $this->t('CSV separator'),
       '#size' => 1,
       '#maxlength' => 1,
-      '#default_value' => \Drupal::config('tablefield.settings')->get('tablefield_csv_separator'),
+      '#default_value' => \Drupal::config('tablefield.settings')->get('csv_separator'),
       '#description' => $this->t('Select the separator for the CSV import/export.'),
+    );
+
+    $form['rows'] = array(
+      '#type' => 'textfield',
+      '#title' => $this->t('Default number of table rows'),
+      '#size' => 3,
+      '#maxlength' => 3,
+      '#default_value' => \Drupal::config('tablefield.settings')->get('rows'),
+      '#description' => $this->t('You can override this in field settings or in your custom form element.'),
+    );
+
+    $form['cols'] = array(
+      '#type' => 'textfield',
+      '#title' => $this->t('Default number of table columns'),
+      '#size' => 2,
+      '#maxlength' => 2,
+      '#default_value' => \Drupal::config('tablefield.settings')->get('cols'),
+      '#description' => $this->t('You can override this in field settings or in your custom form element.'),
     );
 
     return parent::buildForm($form, $form_state);
@@ -39,9 +61,9 @@ class TablefieldConfigForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state) {
-    if (Unicode::strlen($form_state->getValue('tablefield_csv_separator')) !== 1) {
+    if (Unicode::strlen($form_state->getValue('csv_separator')) !== 1) {
       $message = $this->t('Separator must be one character only!');
-      $this->setFormError('tablefield_csv_separator', $message);
+      $this->setFormError('csv_separator', $message);
     }
   }
 
@@ -50,7 +72,9 @@ class TablefieldConfigForm extends ConfigFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $this->config('tablefield.settings')
-      ->set('tablefield_csv_separator', $form_state->getValue('tablefield_csv_separator'))
+      ->set('csv_separator', $form_state->getValue('csv_separator'))
+      ->set('rows', $form_state->getValue('rows'))
+      ->set('cols', $form_state->getValue('cols'))
       ->save();
 
     parent::submitForm($form, $form_state);
